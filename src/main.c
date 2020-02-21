@@ -194,7 +194,7 @@ term_context_t** contexts;
 pthread_t timer_thread;
 pthread_mutex_t modbus_mutex; 
 int dirty = 0; /* Used to mark modbus register space as dirty */
-int wdt_triggered = 0, frozen = 0, nterms = 0;
+int wdt_triggered = 0, frozen = 0, nterms = 0, fallback_status;
 
 
 /* Function prototypes */
@@ -591,18 +591,31 @@ void* srv_listen(void* v)
 
 				modbus_header_t header = *(modbus_header_t*)query;
 
+				/* Correct the byte-order for 16-bit values */
+				header.tid = ntohs(header.tid);
+				header.length = ntohs(header.tid);
+				header.start_addr = ntohs(header.start_addr);
+				header.addr_cnt = ntohs(header.addr_cnt);
+
 				/* Check if we should trigger the watchdog */
 				if(*reg_wdt_type == WATCHDOG_TYPE_TELEGRAM)
 				{
 					*reg_wdt_curr_time = *reg_wdt_time;
+					fallback_status = 0;
 					wdt_triggered = 1;
 				}
 				else if(*reg_wdt_type = WATCHDOG_TYPE_WRITE && (header.function == 5 ||
 					header.function == 15 || header.function == 6 || header.function == 16))
 				{
 					*reg_wdt_curr_time = *reg_wdt_time;
+					fallback_status = 0;
 					wdt_triggered = 1;
 				}
+
+#ifdef _DEBUG 
+				printf("Modbus request received. Function=%u,slave=%u,startaddr=0x%X,num=0x%X\n",
+					header.function, header.unitid, header.start_addr, header.addr_cnt);
+#endif
 
 				modbus_reply(modbus_context, query, rc, modbus_map);
 				dirty = 1;
@@ -827,6 +840,7 @@ Every cycle of this loop we need to:
 void* ek9000_update(void* vparam)
 {
 	unsigned write, tgt_term, index, subindex, length, ret;
+
 	/* This is so we add a delay in there */
 	static struct
 	{
@@ -845,7 +859,8 @@ void* ek9000_update(void* vparam)
 	check_regions();
 
 	/* Process wdt updates */
-	if(wdt_triggered && *reg_wdt_type != WATCHDOG_TYPE_DISABLED)
+	if(wdt_triggered && *reg_wdt_type != WATCHDOG_TYPE_DISABLED &&
+		fallback_status == 0)
 	{
 		(*reg_wdt_curr_time) -= 1;
 		if(*reg_wdt_curr_time <= 0)
@@ -853,6 +868,7 @@ void* ek9000_update(void* vparam)
 			Log_Warn("[EVENT] Watchdog timer expired.\n");
 			ek9000_trigger_fallback();
 			*reg_wdt_curr_time = 0;
+			fallback_status = 1;
 		}
 	}
 
@@ -960,8 +976,9 @@ void ek9000_trigger_fallback()
 	{
 	case FALLBACK_SET_ZERO:
 		Log_Warn("[EVENT] Fallback set to zero triggered\n");
-		memset(modbus_map->tab_registers, 0, EK9000_HOLDING_REG_NUM * sizeof(uint16_t));
-		memset(modbus_map->tab_bits, 0, EK9000_COIL_NUM * sizeof(uint16_t));
+		/* Zero ONLY the PDO registers */
+		memset(modbus_map->tab_registers, 0, 0x8FF);
+		memset(modbus_map->tab_bits, 0, EK9000_COIL_NUM);
 		break;
 	case FALLBACK_FREEZE:
 		Log_Warn("[EVENT] Fallback freeze triggered\n");
@@ -975,6 +992,7 @@ void ek9000_trigger_fallback()
 		break;
 	}
 	++*reg_num_fallbacks_triggered;
+	fallback_status = 0;
 }
 
 void ek9000_reset()

@@ -61,7 +61,7 @@ typedef struct
 	uint16_t underrange : 1;
 } el3064_pdo_status_t;
 
-#pragma pack(0)
+#pragma pack()
 
 static int el3064_init(term_context_t* ctx, void* pdo_ai_buf, void* pdo_ao_buf, void* pdo_di_buf, void* pdo_do_buf)
 {
@@ -127,7 +127,6 @@ static int el3064_send_coe_data(term_context_t* ctx, coe_payload_t payload)
 
 static int el3064_coe_read(term_context_t* ctx, uint16_t* out, coe_read_req_t req)
 {
-
 }
 
 static void el3064_destroy(term_context_t* ctx)

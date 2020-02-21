@@ -55,6 +55,8 @@ typedef struct
 	uint16_t length;
 	uint8_t unitid;
 	uint8_t function;
+	uint16_t start_addr;
+	uint16_t addr_cnt;
 } modbus_header_t;
 #pragma pack(0)
 
