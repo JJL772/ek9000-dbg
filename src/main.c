@@ -123,10 +123,10 @@ int strisspace(const char* str)
 
 #define EK9000_MAX_CONNECTIONS 2
 
-#define EK9000_HOLDING_REG_START 0x800
+#define EK9000_HOLDING_REG_START 0x0
 #define EK9000_HOLDING_REG_NUM (0x14FF - EK9000_HOLDING_REG_START)
 #define EK9000_INPUT_REG_START 0x0
-#define EK9000_INPUT_REG_NUM (0x800 - EK9000_INPUT_REG_START)
+#define EK9000_INPUT_REG_NUM (0x8000 - EK9000_INPUT_REG_START)
 #define EK9000_COIL_START 0x0
 #define EK9000_COIL_NUM 0x800
 #define EK9000_INPUT_BIT_START 0x0
@@ -185,38 +185,6 @@ pthread_mutex_t modbus_mutex;
 int dirty = 0; /* Used to mark modbus register space as dirty */
 int wdt_triggered = 0, frozen = 0, nterms = 0;
 
-/* Registers in the modbus memory map */
-uint16_t* reg_bus_coupler_id;
-uint16_t* reg_pdo_size_ao;
-uint16_t* reg_pdo_size_ai;
-uint16_t* reg_pdo_size_do;
-uint16_t* reg_pdo_size_di;
-uint16_t* reg_wdt_curr_time;
-uint16_t* reg_num_fallbacks_triggered;
-uint16_t* reg_connections;
-uint16_t* reg_hardware_ver;
-uint16_t* reg_soft_ver_main;
-uint16_t* reg_soft_ver_submain;
-uint16_t* reg_soft_ver_beta;
-uint16_t* reg_serial_num;
-uint16_t* reg_mfg_date_day;
-uint16_t* reg_mfg_date_mon;
-uint16_t* reg_mfg_date_year;
-uint16_t* reg_ebus_status;
-uint16_t* reg_wdt_reset;
-uint16_t* reg_wdt_time;
-uint16_t* reg_wdt_type;
-uint16_t* reg_fallback_mode;
-uint16_t* reg_writelock;
-uint16_t* reg_ebus_ctrl;
-uint16_t* reg_0x1400;
-uint16_t* reg_0x1401;
-uint16_t* reg_0x1402;
-uint16_t* reg_0x1403;
-uint16_t* reg_0x1404;
-uint16_t* reg_0x1405;
-uint16_t* reg_data_start;
-uint16_t* reg_term_ids;
 
 /* Function prototypes */
 int 	srv_start_server(const char* ip, int port);
@@ -625,7 +593,7 @@ void Log_Warn(const char* fmt, ...)
 	time_t _time = time(NULL);
 	struct tm* _tm = localtime(&_time);
 	char buf[512];
-	sprintf(buf, "%u:%02u:%02u [WARN] %s", _tm->tm_hour, _tm->tm_min, _tm->tm_sec, fmt);
+	sprintf(buf, "\e[93m%u:%02u:%02u [WARN] %s\e[39m", _tm->tm_hour, _tm->tm_min, _tm->tm_sec, fmt);
 
 	va_start(list, fmt);
 	vfprintf(log_handle, buf, list);
@@ -651,7 +619,7 @@ void Log_Fatal(const char* fmt, ...)
 	time_t _time = time(NULL);
 	struct tm* _tm = localtime(&_time);
 	char buf[512];
-	sprintf(buf, "%u:%02u:%02u [FATAL] %s", _tm->tm_hour, _tm->tm_min, _tm->tm_sec, fmt);
+	sprintf(buf, "\e[91m%u:%02u:%02u [FATAL] %s\e[39m", _tm->tm_hour, _tm->tm_min, _tm->tm_sec, fmt);
 
 	va_start(list, fmt);
 	vfprintf(log_handle, buf, list);
