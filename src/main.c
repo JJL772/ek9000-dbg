@@ -132,6 +132,11 @@ int strisspace(const char* str)
 #define EK9000_INPUT_BIT_START 0x0
 #define EK9000_INPUT_BIT_NUM 0x800
 
+#define COLOR_GREEN 1
+#define COLOR_NONE 0
+#define COLOR_YELLOW 2
+#define COLOR_RED 3
+
 /* Command descriptor */
 typedef struct
 {
@@ -155,6 +160,7 @@ void command_set_soft_ver(int, char**);
 void command_set_wdt_time(int, char**);
 void command_set_fallback_mode(int, char**);
 void command_print_settings(int, char**);
+void command_print_info(int,char**);
 
 command_t g_commands[] =
 {
@@ -165,6 +171,7 @@ command_t g_commands[] =
 	COMMAND("set_wdt_time", command_set_wdt_time, "Sets the time until the watchdog triggers"),
 	COMMAND("set_fallback_mode", command_set_fallback_mode, "Sets the fallback mode of the watchdog"),
 	COMMAND("print_settings", command_print_settings, "Prints out the current settings of the device."),
+	COMMAND("print_info", command_print_info, "Prints all R/O Info of the device"),
 };
 int g_ncommands = sizeof(g_commands) / sizeof(command_t);
 
@@ -199,6 +206,7 @@ void 	Log_Info(const char* fmt, ...);
 void 	Log_Warn(const char* fmt, ...);
 void 	Log_Err(const char* fmt, ...);
 void 	Log_Fatal(const char* fmt, ...);
+void	PrettyPrint(int color, const char* fmt, ...);
 bool 	VerifyIP(const char* ip);
 void 	InitMapping();
 void* 	ek9000_update(void*);
@@ -526,10 +534,12 @@ void srv_server_loop()
 /* Opens an interactive shell for the programmer */
 void srv_open_shell()
 {
+	/* Sleep for 1 second so we can avoid the server's output spew */
+	sleep(1);
 	char input[4096];
 	char* args[256];
 	int ran = 0;
-	printf("---- EK9000 Simulator Shell V1.0 ----\n");
+	PrettyPrint(COLOR_GREEN, "---- EK9000 Simulator Shell V1.0 ----\n");
 	while(1)
 	{
 		printf("$ ");
@@ -610,6 +620,26 @@ void Log_Err(const char* fmt, ...)
 
 	va_start(list, fmt);
 	vfprintf(log_handle, buf, list);
+	va_end(list);
+}
+
+void PrettyPrint(int color, const char* fmt, ...)
+{
+	char* _color;
+	va_list list;
+	char buf[512];
+	switch(color)
+	{
+		case COLOR_GREEN: _color="\e[92m"; break;
+		case COLOR_RED: _color= "\e[91m"; break;
+		case COLOR_YELLOW: _color= "\e[93m"; break;
+		default: _color= "\e[39m";
+	}
+
+	sprintf(buf, "%s%s\e[39m", _color, fmt);
+
+	va_start(list, fmt);
+	vprintf(buf, list);
 	va_end(list);
 }
 
@@ -899,7 +929,6 @@ void command_set_fallback_mode(int argc, char** argv)
 
 void command_print_settings(int argc, char** argv)
 {
-	printf("Hardware Version:           %u\n", *reg_hardware_ver);
 	printf("Watchdog Current Time:      %u\n", *reg_wdt_curr_time);
 	printf("Watchdog Time:              %u\n", *reg_wdt_time);
 	printf("Watchdog Mode:              %u\n", *reg_wdt_type);
@@ -913,4 +942,9 @@ void command_print_settings(int argc, char** argv)
 	printf("Analog in PDO Size (bits):  %u\n", *reg_pdo_size_ao);
 	printf("Digi Out PDO Size (bits):   %u\n", *reg_pdo_size_do);
 	printf("Digi In PDO Size (bits):    %u\n", *reg_pdo_size_di);
+}
+
+void command_print_info(int argc, char** argv)
+{
+	
 }
