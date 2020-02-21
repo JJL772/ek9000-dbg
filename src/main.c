@@ -929,22 +929,26 @@ void command_set_fallback_mode(int argc, char** argv)
 
 void command_print_settings(int argc, char** argv)
 {
-	printf("Watchdog Current Time:      %u\n", *reg_wdt_curr_time);
-	printf("Watchdog Time:              %u\n", *reg_wdt_time);
-	printf("Watchdog Mode:              %u\n", *reg_wdt_type);
-	printf("Fallback mode:              %u\n", *reg_fallback_mode);
-	printf("Writelock:                  %u\n", *reg_writelock);
-	printf("EBUS Status:                %u\n", *reg_ebus_status);
-	printf("EBUS Control:               %u\n", *reg_ebus_ctrl);
-	printf("Number of connections:      %u\n", *reg_connections);
-	printf("Fallbacks Triggered:        %u\n", *reg_num_fallbacks_triggered);
-	printf("Analog out PDO Size (bits): %u\n", *reg_pdo_size_ao);
-	printf("Analog in PDO Size (bits):  %u\n", *reg_pdo_size_ao);
-	printf("Digi Out PDO Size (bits):   %u\n", *reg_pdo_size_do);
-	printf("Digi In PDO Size (bits):    %u\n", *reg_pdo_size_di);
+	printf("\tWatchdog Current Time:      %u\n", *reg_wdt_curr_time);
+	printf("\tWatchdog Time:              %u\n", *reg_wdt_time);
+	printf("\tWatchdog Mode:              %u\n", *reg_wdt_type);
+	printf("\tFallback mode:              %u\n", *reg_fallback_mode);
+	printf("\tWritelock:                  %u\n", *reg_writelock);
+	printf("\tEBUS Status:                %u\n", *reg_ebus_status);
+	printf("\tEBUS Control:               %u\n", *reg_ebus_ctrl);
+	printf("\tNumber of connections:      %u\n", *reg_connections);
+	printf("\tFallbacks Triggered:        %u\n", *reg_num_fallbacks_triggered);
+	printf("\tAnalog out PDO Size (bits): %u\n", *reg_pdo_size_ao);
+	printf("\tAnalog in PDO Size (bits):  %u\n", *reg_pdo_size_ao);
+	printf("\tDigi Out PDO Size (bits):   %u\n", *reg_pdo_size_do);
+	printf("\tDigi In PDO Size (bits):    %u\n", *reg_pdo_size_di);
 }
 
 void command_print_info(int argc, char** argv)
 {
-	
+	printf("\tHardware version:           %u\n", *reg_hardware_ver);
+	printf("\tSoftware version:           %u.%u.%u\n", *reg_soft_ver_main, 
+		*reg_soft_ver_submain, *reg_soft_ver_beta);
+	printf("\tMfg date:                   %u/%u/%u\n", *reg_mfg_date_day,
+		*reg_mfg_date_mon, *reg_mfg_date_year);
 }
