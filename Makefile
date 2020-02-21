@@ -8,8 +8,8 @@ CXX ?= g++
 BINDIR = bin/
 OUTNAME = eksim
 INCLUDES += -I/usr/local/include/ 
-DEFINES += -fsanitize=address
-LIBS += -lmodbus7 -lc -lrt -ldl -lpthread
+DEFINES += -fsanitize=address -fsanitize=undefined
+LIBS += -lreadline -lmodbus7 -lc -lrt -ldl -lpthread
 
 SRCS += $(wildcard src/*.c)
 

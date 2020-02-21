@@ -31,6 +31,10 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 
+/* Readline includes */
+#include <readline/readline.h>
+#include <readline/history.h>
+
 #include "term.h"
 
 /* For some reason strdup doesnt exist everywhere */
@@ -536,14 +540,17 @@ void srv_open_shell()
 {
 	/* Sleep for 1 second so we can avoid the server's output spew */
 	sleep(1);
-	char input[4096];
+	//char input[4096];
+	char* input;
 	char* args[256];
 	int ran = 0;
+
+	/* Bind keys to readline actions */
+	rl_bind_key('\t', rl_complete);
 	PrettyPrint(COLOR_GREEN, "---- EK9000 Simulator Shell V1.0 ----\n");
 	while(1)
 	{
-		printf("$ ");
-		fgets(input, 4096, stdin);
+		input = readline("ek9000> ");
 		/* If it's all spaces, just fail */
 		if(strisspace(input)) goto done;
 		for(int i = 0; i < g_ncommands; i++)
@@ -561,9 +568,11 @@ void srv_open_shell()
 				goto done;
 			}
 		}
+		add_history(input);
 	nocmd:
 		if(!ran) { printf("Command not found.\n"); ran = 0; };
 	done:
+		free(input);
 		continue;
 	}
 }
