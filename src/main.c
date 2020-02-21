@@ -217,7 +217,88 @@ void* 	ek9000_update(void*);
 void	ek9000_trigger_fallback();
 void    ek9000_reset();
 void    ek9000_stop_ebus();
+int     ismemzero(void*,size_t);
+int     create_noaccess_region(size_t start, size_t size, const char* name);
+int     check_noaccess_regions();
+int     check_regions();
 
+typedef struct mem_region_s
+{
+	size_t start;
+	size_t size;
+	unsigned int flags;
+	void* prevdat;
+	const char* name;
+#define REGION_FLAG_RO 1
+#define REGION_FLAG_RW 2
+#define REGION_FLAG_NOACCESS 3
+} mem_region_t;
+
+static mem_region_t g_regions[32];
+
+
+int ismemzero(void* m, size_t sz)
+{
+	for(; sz > 0; --sz)
+		if(((char*)m)[sz]) return 0;
+	return 1;
+}
+
+int create_noaccess_region(size_t start, size_t end, const char* name)
+{
+	int i;
+	for(i = 0; g_regions[i].start; i++);
+	
+	if(i >= 32) return -1;
+
+	mem_region_t* reg = &g_regions[i];
+	reg->start = start;
+	reg->size = end-start;
+	reg->flags = REGION_FLAG_NOACCESS;
+	reg->prevdat = malloc(reg->size);
+	reg->name = name;
+	memcpy(reg->prevdat, (void*)start, end-start);
+	return 0;
+}
+
+int check_regions()
+{
+	size_t addr = 0;
+	uint16_t prev = 0, new = 0;
+	for(int i = 0; i < 32; i++)
+	{
+		if(g_regions[i].size == 0) continue;
+		mem_region_t* reg = &g_regions[i];
+		/* Check the memory to verify that it's identical */
+		if(memcmp((void*)reg->start, reg->prevdat, reg->size))
+		{
+			/* If it's not, let's go ahead and find the exact offending address */
+			for(uint16_t* offset = (uint16_t*)reg->start;;offset++)
+			{
+				if(*offset != ((uint16_t*)reg->prevdat)[(size_t)offset-(reg->start/2)])
+				{
+					addr = (size_t)offset;
+					prev = ((uint16_t*)reg->prevdat)[(size_t)offset-reg->start];
+					new = *offset;
+					break;
+				}
+			}
+			Log_Err("MEMORY VALIDATION FAILED!\n");
+			printf("-------------------------------\n");
+			printf("Offending memory region: %s\n", reg->name);
+			printf("Region base:       0x%lX\n", reg->start);
+			printf("Region size:       0x%lX\n", reg->size);
+			printf("Offending address: 0x%lX", addr);
+			printf("Previous value:    0x%X\n", prev);
+			printf("New value:         0x%X\n", new);
+			printf("-------------------------------\n");
+		}
+	}
+	return 0;
+}
+
+
+/* Entry point */
 int main(int argc, char** argv)
 {
 	int ret;
@@ -316,6 +397,10 @@ int main(int argc, char** argv)
 		EK9000_INPUT_BIT_START, EK9000_INPUT_BIT_NUM, 
 		EK9000_HOLDING_REG_START-1, EK9000_HOLDING_REG_NUM,
 		EK9000_INPUT_REG_START, EK9000_INPUT_REG_NUM);
+
+	/* Create our protected memory regions */
+	create_noaccess_region((size_t)&modbus_map->tab_input_registers[0x800], 
+		(size_t)&modbus_map->tab_input_registers[0x1000-1], "Protected Input Register Space\n");
 
 	if(!modbus_map)
 		PRINT_AND_EXIT("Failed to create modbus mapping.\n", 1);
@@ -756,6 +841,8 @@ void* ek9000_update(void* vparam)
 	} current_coe_req;
 	static int counts = 0;
 
+	/* Check memory regions for any corruption by the slave */
+	check_regions();
 
 	/* Process wdt updates */
 	if(wdt_triggered && *reg_wdt_type != WATCHDOG_TYPE_DISABLED)
