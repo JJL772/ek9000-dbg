@@ -422,8 +422,7 @@ int main(int argc, char** argv)
 	/* Stop the server */
 	srv_stop_server();
 
-	/* Kill the thread */
-	pthread_cancel(timer_thread);
+	/* Free everything */
 	free(terms);
 	free(contexts);
 	modbus_mapping_free(modbus_map);
@@ -1010,7 +1009,6 @@ void ek9000_stop_ebus()
 void command_exit(int argc, char** argv)
 {
 	pthread_cancel(listen_thread);
-	pthread_cancel(timer_thread);
 	exit(0);
 }
 
