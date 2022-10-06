@@ -122,11 +122,12 @@ static void el3064_pdo_update(term_context_t* ctx)
 
 static int el3064_send_coe_data(term_context_t* ctx, coe_payload_t payload)
 {
-
+	return 0;
 }
 
 static int el3064_coe_read(term_context_t* ctx, uint16_t* out, coe_read_req_t req)
 {
+	return 0;
 }
 
 static void el3064_destroy(term_context_t* ctx)

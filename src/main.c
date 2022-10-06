@@ -30,22 +30,15 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <strings.h>
 
 /* Readline includes */
 #include <readline/readline.h>
 #include <readline/history.h>
 
 #include "term.h"
-
-/* For some reason strdup doesnt exist everywhere */
-char* strdup_(const char* str)
-{
-	size_t l = strlen(str);
-	char* c = malloc(l) + 1;
-	memcpy(c, str, l);
-	c[l] = '\0';
-	return c;
-}
+#include "ek-defs.h"
+#include "ek-sim.h"
 
 int strisspace(const char* str)
 {
@@ -60,81 +53,10 @@ int strisspace(const char* str)
 #define EXEC_AND_EXIT(fn, code) { fn; exit(code); }
 #define CHARS_TO_INT16(c1, c2) ((c1) | ((c2) << 7))
 
-#define BUS_COUPLER_ID 9000
-#define BUS_COUPLER_ID_REG 0x1000
+#define VALIDATE_PARAM(cond, msg, ret) if(!(cond)) {printf("%s", msg); return ret ;}
 
 /* Default port is 1502 because we need root access to use 502 */
 #define DEFAULT_PORT 1502
-
-#define PDO_AO_SIZE_REG 0x1010
-#define PDO_AI_SIZE_REG 0x1011
-#define PDO_DO_SIZE_REG 0x1012
-#define PDO_DI_SIZE_REG 0x1013
-#define WATCHDOG_CURRENT_TIME_REG 0x1020
-#define FALLBACKS_TRIGGERED_REG 0x1021
-#define TCP_CONN_NUM_REG 0x1022
-#define HARDWARE_VERSION_REG 0x1030
-#define SOFTWARE_VERSION_MAIN_REG 0x1031
-#define SOFTWARE_VERSION_SUBMAIN_REG 0x1032
-#define SOFTWARE_VERSION_BETA_REG 0x1033
-#define SERIAL_NUM_REG 0x1034
-
-#define SOFTWARE_VERSION_MAIN 69
-#define SOFTWARE_VERSION_SUBMAIN 420
-#define SOFTWARE_VERSION_BETA 21
-#define HARDWARE_VERSION 69
-#define SERIAL_NUM 420
-
-#define MFG_DATE_DAY_REG 0x1035
-#define MFG_DATE_DAY 9
-
-#define MFG_DATE_MONTH_REG 0x1136
-#define MFG_DATE_MONTH 8
-
-#define MFG_DATE_YEAR_REG 0x1037
-#define MFG_DATE_YEAR 2019
-
-#define WATCHDOG_TIME_REG 0x1120
-#define WATCHDOG_TIME_DEFAULT 1000
-
-#define WATCHDOG_TYPE_CONF_REG 0x1122 
-#define WATCHDOG_TYPE_DISABLED 0
-#define WATCHDOG_TYPE_WRITE  2
-#define WATCHDOG_TYPE_TELEGRAM 1
-#define WATCHDOG_TYPE_DEFAULT WATCHDOG_TYPE_TELEGRAM
-
-#define FALLBACK_CONF_REG 0x1123
-#define FALLBACK_SET_ZERO 0
-#define FALLBACK_FREEZE 1
-#define FALLBACK_STOP_EBUS 2
-#define FALLBACK_DEFAULT FALLBACK_SET_ZERO 
-
-#define WATCHDOG_RESET_REG 0x1121
-
-#define WRITELOCK_CONF_REG 0x1124
-#define WRITELOCK_ON 1
-#define WRITELOCK_OFF 0
-
-#define EBUS_CONF_REG 0x1140
-#define EBUS_INIT 0
-#define EBUS_OP 1
-
-/* Note: these are in the form 0xXX2 or 0xXX5, etc. because we want to catch non-compliant code */
-#define STATUS_ERROR 0x102
-#define STATUS_BUSY 0x201
-#define STATUS_DONE 0x405
-#define STATUS_EXECUTE 1
-
-#define EK9000_MAX_CONNECTIONS 2
-
-#define EK9000_HOLDING_REG_START 0x0
-#define EK9000_HOLDING_REG_NUM (0x14FF - EK9000_HOLDING_REG_START)
-#define EK9000_INPUT_REG_START 0x0
-#define EK9000_INPUT_REG_NUM (0x8000 - EK9000_INPUT_REG_START)
-#define EK9000_COIL_START 0x0
-#define EK9000_COIL_NUM 0x800
-#define EK9000_INPUT_BIT_START 0x0
-#define EK9000_INPUT_BIT_NUM 0x800
 
 #define COLOR_GREEN 1
 #define COLOR_NONE 0
@@ -317,7 +239,7 @@ int main(int argc, char** argv)
 		{
 			if(i < argc-1)
 			{
-				logfile = strdup_(argv[i+1]);
+				logfile = strdup(argv[i+1]);
 				log_handle = fopen(logfile, "w+");
 				if(!log_handle)
 					PRINT_AND_EXIT("Failed to open log file", 1);
@@ -330,7 +252,7 @@ int main(int argc, char** argv)
 		/* More verbose method of setting log file */
 		else if(strncmp(argv[i], "--log-file=", 11) == 0)
 		{
-			logfile = strdup_(argv[i] + 11);
+			logfile = strdup(argv[i] + 11);
 			if(!logfile) 
 				PRINT_AND_EXIT("Unable to open log file", 1);
 			log_handle = fopen(logfile, "w+");
@@ -341,7 +263,7 @@ int main(int argc, char** argv)
 		/* Specifies terminal list */
 		else if(strncmp(argv[i], "--terminals=", 12) == 0)
 		{
-			char* tlist = strdup_(argv[i] + 12);
+			char* tlist = strdup(argv[i] + 12);
 			if(!tlist)
 				PRINT_AND_EXIT("Terminal list invalid.", 1);
 			/* Alloc and zero our globals */
@@ -491,9 +413,9 @@ void setup_terminals()
 int srv_start_server(const char* _ip, int _port)
 {
 	int ret;
-	Log_Info("Starting server on %s:%u\n", _ip, _port);
+	Log_Info("Starting server on %s:%u\n", _ip ? _ip : "localhost", _port);
 
-	modbus_context = modbus_new_tcp(NULL, _port);
+	modbus_context = modbus_new_tcp(_ip, _port);
 
 	if(!modbus_context)
 	{
@@ -644,6 +566,7 @@ void srv_open_shell()
 
 	/* Bind keys to readline actions */
 	rl_bind_key('\t', rl_complete);
+	using_history();
 	PrettyPrint(COLOR_GREEN, "---- EK9000 Simulator Shell V1.0 ----\n");
 	while(1)
 	{
@@ -727,6 +650,24 @@ void Log_Err(const char* fmt, ...)
 	va_start(list, fmt);
 	vfprintf(log_handle, buf, list);
 	va_end(list);
+}
+
+int Log_SupportsColors()
+{
+	static int s_supports = 0;
+	static int s_checked = 0;
+	if (s_checked)
+		return s_supports;
+	char* e = getenv("COLORTERM");
+	if (e && !strcmp(e, "truecolor"))
+		s_supports = 1;
+	e = getenv("TERM");
+	if (e && !strcmp(e, "xterm-256color"))
+		s_supports = 1;
+	e = getenv("CLICOLOR_FORCE");
+	if (e && !strcmp(e, "1"))
+		s_supports = 1;
+	return s_supports;
 }
 
 void PrettyPrint(int color, const char* fmt, ...)
@@ -1031,12 +972,27 @@ void command_help(int argc,char** argv)
 
 void command_set_wdt_time(int argc, char** argv)
 {
-
+	VALIDATE_PARAM(argc != 2, "Usage: set_wdt_time <time in ms>\n",);
+	int time = atoi(argv[1]);
+	VALIDATE_PARAM(time > 0, "Time must be positive\n",);
+	
+	*reg_wdt_time = time;
 }
 
 void command_set_fallback_mode(int argc, char** argv)
 {
+	VALIDATE_PARAM(argc != 2, "Usage: set_fallback_mode freeze|set_to_zero|stop_ebus\n",);
+	static enum_str_map_t values[] = {
+		{"freeze", FALLBACK_FREEZE},
+		{"set_to_zero", FALLBACK_SET_ZERO},
+		{"set_zero", FALLBACK_SET_ZERO},
+		{"stop_ebus", FALLBACK_STOP_EBUS},
+	};
+	int e;
+	int a = enum_from_str(values, ARRAYSIZE(values), argv[1], &e);
+	VALIDATE_PARAM(!e, "Usage: set_fallback_mode freeze|set_to_zero|stop_ebus\n",);
 
+	*reg_fallback_mode = a;
 }
 
 void command_print_settings(int argc, char** argv)
@@ -1063,4 +1019,18 @@ void command_print_info(int argc, char** argv)
 		*reg_soft_ver_submain, *reg_soft_ver_beta);
 	printf("\tMfg date:                   %u/%u/%u\n", *reg_mfg_date_day,
 		*reg_mfg_date_mon, *reg_mfg_date_year);
+}
+
+
+int enum_from_str(enum_str_map_t* map, int n, const char* v, int* err)
+{
+	if (err)
+		*err = 0;
+	for(int i = 0; i < n; ++i) {
+		if (!strcasecmp(map[i].s, v))
+			return map[i].e;
+	}
+	if (err)
+		*err = 1;
+	return 0;
 }

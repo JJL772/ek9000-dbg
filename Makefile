@@ -5,7 +5,7 @@
 CC ?= gcc
 CXX ?= g++
 
-BINDIR = bin/
+BINDIR =
 OUTNAME = eksim
 INCLUDES += -I/usr/local/include/ 
 DEFINES += -fsanitize=address -fsanitize=undefined -D_DEBUG=1
@@ -15,8 +15,8 @@ SRCS += $(wildcard src/*.c)
 
 all:
 	mkdir -p bin 
-	$(CC) -g -o $(BINDIR)/$(OUTNAME) $(INCLUDES) $(DEFINES) $(SRCS) $(LIBS)
+	$(CC) -g -o $(BINDIR)$(OUTNAME) $(INCLUDES) $(DEFINES) $(SRCS) $(LIBS)
 
 clean:
-	rm -rf $(BINDIR)
+	rm -f $(OUTNAME)
 
