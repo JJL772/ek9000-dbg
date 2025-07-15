@@ -30,6 +30,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <getopt.h>
 
 /* Readline includes */
 #include <readline/readline.h>
@@ -53,6 +54,8 @@ int strisspace(const char* str)
 		if(!isspace(c)) return 0;
 	return 1;
 }
+
+#define MAX_TERMS 256
 
 #define PRINT_AND_EXIT(str, code) { printf("%s\n", str); exit(code); }
 #define PRINT_HELP_AND_EXIT(str, code) { printf("%s\n", str); ShowHelp(); exit(code); };
@@ -105,7 +108,7 @@ int strisspace(const char* str)
 
 #define FALLBACK_CONF_REG 0x1123
 #define FALLBACK_SET_ZERO 0
-#define FALLBACK_FREEZE 1
+#define FALLBACK_BUS_FREEZE 1
 #define FALLBACK_STOP_EBUS 2
 #define FALLBACK_DEFAULT FALLBACK_SET_ZERO 
 
@@ -128,7 +131,7 @@ int strisspace(const char* str)
 #define EK9000_MAX_CONNECTIONS 2
 
 #define EK9000_HOLDING_REG_START 0x0
-#define EK9000_HOLDING_REG_NUM (0x14FF - EK9000_HOLDING_REG_START)
+#define EK9000_HOLDING_REG_NUM (0x8000 - EK9000_HOLDING_REG_START)
 #define EK9000_INPUT_REG_START 0x0
 #define EK9000_INPUT_REG_NUM (0x8000 - EK9000_INPUT_REG_START)
 #define EK9000_COIL_START 0x0
@@ -179,6 +182,11 @@ command_t g_commands[] =
 };
 int g_ncommands = sizeof(g_commands) / sizeof(command_t);
 
+struct term_list {
+	struct term_list* next;
+	term_t* term;
+};
+
 /* Globals */
 modbus_t* modbus_context;
 FILE* log_handle;
@@ -189,7 +197,8 @@ pthread_t listen_thread;
 pthread_attr_t thread_attr;
 int verbose;
 modbus_mapping_t* modbus_map;
-term_t** terms;
+//term_t** terms;
+term_t* term_list[MAX_TERMS];
 term_context_t** contexts;
 pthread_t timer_thread;
 pthread_mutex_t modbus_mutex; 
@@ -297,97 +306,69 @@ int check_regions()
 	return 0;
 }
 
+static void append_term(term_t* t) {
+	for (int i = 0; i < MAX_TERMS; ++i) {
+		if (!term_list[i]) {
+			term_list[i] = t;
+			break;
+		}
+	}
+}
+
+static void list_supported() {
+	for (int i = 0; g_terms[i]; i++) {
+		printf("%s\n", g_terms[i]->name);
+	}
+}
 
 /* Entry point */
 int main(int argc, char** argv)
 {
 	int ret;
-
-	/* Get all options */
-	for(int i = 0; i < argc; i++)
-	{
-		size_t arglen = strlen(argv[i]);
-		if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
-		{
+	
+	int opt = -1;
+	while ((opt = getopt(argc, argv, "hl:t:p:vs")) != -1) {
+		switch (opt) {
+		case 'h':
 			cmd_show_help();
 			exit(0);
-		}
-		/* -l will set the log file */
-		else if(strcmp(argv[i], "-l") == 0)
-		{
-			if(i < argc-1)
-			{
-				logfile = strdup_(argv[i+1]);
-				log_handle = fopen(logfile, "w+");
-				if(!log_handle)
-					PRINT_AND_EXIT("Failed to open log file", 1);
-				Log_Info("Opened log file\n");
-				continue;
-			}
-			else
-				PRINT_AND_EXIT("Please provide a log file name", 1);
-		}
-		/* More verbose method of setting log file */
-		else if(strncmp(argv[i], "--log-file=", 11) == 0)
-		{
-			logfile = strdup_(argv[i] + 11);
-			if(!logfile) 
-				PRINT_AND_EXIT("Unable to open log file", 1);
+			break;
+		case 'l':
+			logfile = strdup(optarg);
 			log_handle = fopen(logfile, "w+");
 			if(!log_handle)
 				PRINT_AND_EXIT("Failed to open log file", 1);
 			Log_Info("Opened log file\n");
-		}
-		/* Specifies terminal list */
-		else if(strncmp(argv[i], "--terminals=", 12) == 0)
-		{
-			char* tlist = strdup_(argv[i] + 12);
-			if(!tlist)
-				PRINT_AND_EXIT("Terminal list invalid.", 1);
-			/* Alloc and zero our globals */
-			terms = malloc(sizeof(term_t) * 256);
-			memset(terms, 0, sizeof(term_t) * 256);
-			/* Loop through comma delimited list of terminals */
-			int i = 0;
-			for(char* subst = strtok(tlist, ","); subst; subst = strtok(NULL, ","), i++)
+			break;
+		case 't':
 			{
-				int x = 0, found = 0;
-				term_t* theone = 0;
-				for(term_t* term = g_terms[0]; term; term = g_terms[++x])
-				{
-					if(strncmp(term->name, subst, strlen(term->name)) == 0){ found = 1; theone = term; break; }
+				bool hitAny = false;
+				for (int x = 0; g_terms[x]; x++) {
+					if (!strcmp(optarg, g_terms[x]->name)) {
+						append_term(g_terms[x]);
+						hitAny = true;
+						break;
+					}
 				}
-				if(!found)
-					PRINT_AND_EXIT_VA("Terminal %s is not supported in this simulator.\n", 1, subst);
-				terms[i] = theone;
-				++nterms;
-				assert(theone);
+				if (!hitAny)
+					PRINT_AND_EXIT_VA("Unknown terminal type %s\n", 1, optarg);
 			}
-		}
-		/* More verbose method of specifying port */
-		else if(strncmp(argv[i], "--port=", 7) == 0)
-		{
-			port = atoi(argv[i] + 7);
-			if(errno != 0)
-				PRINT_AND_EXIT("Invalid port number", 1);
-		}
-		/* Enables verbosity */
-		else if(strncmp(argv[i], "-v", 2) == 0)
-		{
+			break;
+		case 'p':
+			port = atoi(optarg);
+			break;
+		case 'v':
 			verbose = 1;
-		}
-		/* Lists out all the supported terminals */
-		else if(strcmp(argv[i], "--terminal-list") == 0)
-		{
-			printf("Supported terminals:\n");
-			int i = 0;
-			for(term_t* term = g_terms[i]; term; term = g_terms[++i])
-			{
-				printf("\t%s\n", term->name);
-			}
+			break;
+		case 's':
+			list_supported();
 			exit(0);
+			break;
+		default:
+			break;
 		}
 	}
+
 	/* If no log handle has been opened, we will just use stdout */
 	if(!log_handle)
 		log_handle = stdout;
@@ -423,7 +404,6 @@ int main(int argc, char** argv)
 	srv_stop_server();
 
 	/* Free everything */
-	free(terms);
 	free(contexts);
 	modbus_mapping_free(modbus_map);
 	modbus_free(modbus_context);
@@ -439,16 +419,16 @@ void setup_terminals()
 	memset(contexts, 0, sizeof(term_context_t*) * 256);
 	
 	/* Warn if no terminals on the rail */
-	if(!terms)
+	if(!term_list[0])
 	{
 		Log_Warn("No terminals specified, so none will be mapped.\n");
 		return;
 	}
-	term_t* table = terms[0];
+	term_t* table = term_list[0];
 	int pdo_ai_pos = 0, pdo_ao_pos = 0, pdo_di_pos = 0, pdo_do_pos = 0, ret = 0;
 
 	/* Pass 0 (Analog mapping) */
-	for(int i = 0; i < 256 && terms[i]; table = terms[++i])
+	for(int i = 0; i < MAX_TERMS && term_list[i]; table = term_list[++i])
 	{
 		assert(table);
 		assert(table->pfnInit);
@@ -467,9 +447,9 @@ void setup_terminals()
 			assert(ret == 0);
 		}
 	}
-	table = terms[0];
+	table = term_list[0];
 	/* Pass 1 (Digital mapping) */
-	for(int i = 0; i < 256 && terms[i]; table = terms[++i])
+	for(int i = 0; i < MAX_TERMS && term_list[i]; table = term_list[++i])
 	{
 		if(table->type == TYPE_DIGITAL)
 		{
@@ -538,11 +518,6 @@ void* srv_listen(void* v)
 	FD_SET(sock, &refset);
 	while(1)
 	{
-		//if(select(maxfd + 1, &refset, NULL, NULL, NULL) == -1)
-		{
-		//	Log_Err("[Listen thread] Error while accepting connection. Errno=%u [Select failed]\n", errno);
-		//	continue;
-		}
 		for(int i = 0; i <= maxfd; i++)
 		{
 			if(!FD_ISSET(i, &refset)) continue;
@@ -603,7 +578,7 @@ void* srv_listen(void* v)
 					fallback_status = 0;
 					wdt_triggered = 1;
 				}
-				else if(*reg_wdt_type = WATCHDOG_TYPE_WRITE && (header.function == 5 ||
+				else if(*reg_wdt_type == WATCHDOG_TYPE_WRITE && (header.function == 5 ||
 					header.function == 15 || header.function == 6 || header.function == 16))
 				{
 					*reg_wdt_curr_time = *reg_wdt_time;
@@ -644,7 +619,6 @@ void srv_open_shell()
 
 	/* Bind keys to readline actions */
 	rl_bind_key('\t', rl_complete);
-	PrettyPrint(COLOR_GREEN, "---- EK9000 Simulator Shell V1.0 ----\n");
 	while(1)
 	{
 		input = readline("ek9000> ");
@@ -822,6 +796,13 @@ void init_regs()
 	*reg_pdo_size_ao = 0;
 	*reg_ebus_ctrl = 1;
 	*reg_ebus_status = 1;
+	
+	*reg_term_ids = 9000;
+	for (int i = 0; i < MAX_TERMS-1; ++i) {
+		if (!term_list[i])
+			break;
+		reg_term_ids[i+1] = term_list[i]->id;
+	}
 }
 
 /*
@@ -864,7 +845,7 @@ void* ek9000_update(void* vparam)
 		(*reg_wdt_curr_time) -= 1;
 		if(*reg_wdt_curr_time <= 0)
 		{
-			Log_Warn("[EVENT] Watchdog timer expired.\n");
+			Log_Warn("[EVENT] Watchdog timer expired\n");
 			ek9000_trigger_fallback();
 			*reg_wdt_curr_time = 0;
 			fallback_status = 1;
@@ -904,7 +885,7 @@ void* ek9000_update(void* vparam)
 				.subindex = subindex,
 				.payload = reg_data_start,
 			};
-			ret = terms[tgt_term]->pfnSendCoEData(contexts[tgt_term], req);
+			ret = term_list[tgt_term]->pfnSendCoEData(contexts[tgt_term], req);
 			counts = rand() % 50;
 			current_coe_req.wreq = req;
 			current_coe_req.write = 1;
@@ -932,7 +913,7 @@ void* ek9000_update(void* vparam)
 		tgt_term = current_coe_req.term;
 		if(write)
 		{
-			ret = terms[tgt_term]->pfnSendCoEData(contexts[tgt_term], 
+			ret = term_list[tgt_term]->pfnSendCoEData(contexts[tgt_term], 
 				current_coe_req.wreq);
 			*reg_0x1400 = (ret == 0 ? STATUS_DONE : STATUS_ERROR);
 			*reg_0x1405 = ret;
@@ -940,7 +921,7 @@ void* ek9000_update(void* vparam)
 		}
 		else
 		{
-			ret = terms[tgt_term]->pfnReadCoEData(contexts[tgt_term],
+			ret = term_list[tgt_term]->pfnReadCoEData(contexts[tgt_term],
 				reg_data_start, current_coe_req.rreq);
 			*reg_0x1400 = (ret == 0 ? STATUS_DONE : STATUS_ERROR);
 			*reg_0x1405 = ret;
@@ -952,9 +933,9 @@ void* ek9000_update(void* vparam)
 	/* NOTE: we do NOT want to update PDOs when the ebus is DOWN */
 	for(int i = 0; i < nterms && (*reg_ebus_status); i++)
 	{
-		if(!terms[i]) continue;
+		if(!term_list[i]) continue;
 		if(!contexts || !contexts[i]) continue;
-		terms[i]->pfnPDOUpdate(contexts[i]);
+		term_list[i]->pfnPDOUpdate(contexts[i]);
 	}
 	
 	/* If the data is dirty and needs processing */
@@ -974,17 +955,17 @@ void ek9000_trigger_fallback()
 	switch (*reg_fallback_mode)
 	{
 	case FALLBACK_SET_ZERO:
-		Log_Warn("[EVENT] Fallback set to zero triggered\n");
+		Log_Warn("[EVENT] Fallback triggered: SET_ZERO\n");
 		/* Zero ONLY the PDO registers */
 		memset(modbus_map->tab_registers, 0, 0x8FF);
 		memset(modbus_map->tab_bits, 0, EK9000_COIL_NUM);
 		break;
-	case FALLBACK_FREEZE:
-		Log_Warn("[EVENT] Fallback freeze triggered\n");
+	case FALLBACK_BUS_FREEZE:
+		Log_Warn("[EVENT] Fallback triggered: BUS_FREEZE\n");
 		frozen = 1;
 		break;
 	case FALLBACK_STOP_EBUS:
-		Log_Warn("[EVENT] Fallback stop EBUS triggered\n");
+		Log_Warn("[EVENT] Fallback triggered: STOP_EBUS\n");
 		ek9000_stop_ebus();
 		break;
 	default: Log_Warn("[EVENT] Invalid fallback type in register %x\n", reg_fallback_mode);
